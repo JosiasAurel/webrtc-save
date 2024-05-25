@@ -58,10 +58,9 @@ const timedOperation = async (metricKey, callback) => {
 function getGame(id) {
   return firestore.collection("games").doc(id).get();
 }
-let ydoc = null;
-let provider = null;
-let isSuccessful = false;
 app.post("/listen", async (req, res) => {
+  let ydoc = null;
+  let provider = null;
   const body = req.body;
   const apiKey = body.apiKey;
   if (apiKey !== process.env.API_KEY) {
@@ -71,7 +70,6 @@ app.post("/listen", async (req, res) => {
   if (!room) {
     return res.status(400).send("Room is required");
   }
-  console.log((await getGame(room)).exists);
   if (!(await getGame(room)).exists) {
     return res.status(400).send("Game does not exist");
   }
@@ -93,17 +91,15 @@ app.post("/listen", async (req, res) => {
 
   let code = ydoc.getText("codemirror").toString();
   let firstUpdated = true;
-  provider.awareness.on("update", () => {
+  ydoc.on("update", () => {
     if (!firstUpdated) {
+      provider.awareness.setLocalState({ saved: "saving" });
       return;
     }
     firstUpdated = false;
-    console.log("First update");
-    setInterval(() => {
-      provider.awareness.setLocalStateField("saved", true);
+    setInterval(async () => {
       if (provider.awareness.getStates().size <= 1) {
-        isSuccessful = false;
-        console.log(provider.awareness.getStates());
+        provider.awareness.setLocalStateField("saved", "error");
         return;
       }
       const metricKey = "database.update";
@@ -130,10 +126,11 @@ app.post("/listen", async (req, res) => {
       //     id: room,
       //   });
       // });
-      isSuccessful = true;
+      provider.awareness.setLocalStateField("saved", "saved");
     }, 2000);
   });
-  roomsListening = roomsListening + [room];
+  roomsListening =
+    roomsListening + [{ room: room, provider: provider, ydoc: ydoc }];
   res.status(200).send("Listening to room " + room);
 });
 
@@ -147,11 +144,13 @@ app.post("/stop", (req, res) => {
   if (!room) {
     return res.status(400).send("Room is required");
   }
-  if (roomsListening.indexOf(room) === -1) {
-    return res.status(400).send("Not listening");
+  const roomData = roomsListening.find((r) => r.room === room);
+  if (!roomData) {
+    return res.status(400).send("Room not found");
   }
-  ydoc.destroy();
-  provider.destroy();
+  roomData.provider.destroy();
+  roomData.ydoc.destroy();
+  roomsListening = roomsListening.filter((r) => r.room !== room);
 
   clearInterval();
   res.status(200).send("Stopped listening");
