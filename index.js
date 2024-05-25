@@ -105,27 +105,27 @@ app.post("/listen", async (req, res) => {
       const metricKey = "database.update";
       code = ydoc.getText("codemirror").toString();
 
-      // await timedOperation(metricKey, async () => {
-      firestore
-        .collection("games")
-        .doc(room)
-        .update({
-          code,
-          modifiedAt: Timestamp.now(),
-          tutorialName: tutorialName ?? null,
-        });
-      // });
+      await timedOperation(metricKey, async () => {
+        firestore
+          .collection("games")
+          .doc(room)
+          .update({
+            code,
+            modifiedAt: Timestamp.now(),
+            tutorialName: tutorialName ?? null,
+          });
+      });
 
-      // await timedOperation(metricKey, async () => {
-      // firestore
-      //   .collection("daily-edits")
-      //   .doc(`${room}-${new Date().toDateString()}`)
-      //   .set({
-      //     type: "game",
-      //     date: Timestamp.now(),
-      //     id: room,
-      //   });
-      // });
+      await timedOperation(metricKey, async () => {
+        firestore
+          .collection("daily-edits")
+          .doc(`${room}-${new Date().toDateString()}`)
+          .set({
+            type: "game",
+            date: Timestamp.now(),
+            id: room,
+          });
+      });
       provider.awareness.setLocalStateField("saved", "saved");
     }, 2000);
   });
