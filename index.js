@@ -59,8 +59,6 @@ function getGame(id) {
   return firestore.collection("games").doc(id).get();
 }
 app.post("/listen", async (req, res) => {
-  let ydoc = null;
-  let provider = null;
   const body = req.body;
   const apiKey = body.apiKey;
   if (apiKey !== process.env.API_KEY) {
@@ -81,11 +79,12 @@ app.post("/listen", async (req, res) => {
   if (!room) {
     return res.status(400).send("Room is required");
   }
-  if (roomsListening.indexOf(room) !== -1) {
+  const roomData = roomsListening.find((r) => r.room === room);
+  if (roomData !== undefined) {
     return res.status(200).send("Already listening");
   }
-  ydoc = new Y.Doc();
-  provider = new WebrtcProvider(room, ydoc, {
+  let ydoc = new Y.Doc();
+  let provider = new WebrtcProvider(room, ydoc, {
     signaling: ["wss://yjs-signaling-server-5fb6d64b3314.herokuapp.com"],
   });
 
@@ -129,8 +128,11 @@ app.post("/listen", async (req, res) => {
       provider.awareness.setLocalStateField("saved", "saved");
     }, 2000);
   });
-  roomsListening =
-    roomsListening + [{ room: room, provider: provider, ydoc: ydoc }];
+  roomsListening.push({
+    room: room,
+    provider: provider,
+    ydoc: ydoc,
+  });
   res.status(200).send("Listening to room " + room);
 });
 
