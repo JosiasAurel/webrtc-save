@@ -58,6 +58,74 @@ const timedOperation = async (metricKey, callback) => {
 function getGame(id) {
   return firestore.collection("games").doc(id).get();
 }
+
+firestore.collection("games").onSnapshot((snapshot) => {
+  snapshot.docChanges().forEach((change) => {
+    let firstUpdated = true;
+    const doc = change.doc;
+    const data = change.doc.data();
+    const lastModified = data.modifiedAt.toDate()
+    const now = new Date()
+    const diff = now - lastModified
+    if(diff < 5 * 1000 * 60){
+      if(roomsListening.find((r) => r.room === doc.id) === undefined){
+        console.log("Started listening " + doc.id)
+        let ydoc = new Y.Doc();
+        ydoc.getText("codemirror").insert(0, data.code);
+        let provider = new WebrtcProvider(doc.id, ydoc, {
+          signaling: ["wss://yjs-signaling-server-5fb6d64b3314.herokuapp.com"],
+        });
+        roomsListening.push({
+          room: doc.id,
+          provider: provider,
+          ydoc: ydoc,
+        });
+        let code = ydoc.getText("codemirror").toString();
+        ydoc.on("update", () => {
+          console.log(provider.awareness.getStates())
+          if (!firstUpdated) {
+            provider.awareness.setLocalState({ saved: "saving" });
+            return;
+          }
+          firstUpdated = false;
+          setInterval(async () => {
+            if (provider.awareness.getStates().size <= 1) {
+              provider.awareness.setLocalStateField("saved", "error");
+              return;
+            }
+            const metricKey = "database.update";
+            code = ydoc.getText("codemirror").toString();
+    
+            // await timedOperation(metricKey, async () => {
+              firestore
+                .collection("games")
+                .doc(doc.id)
+                .update({
+                  code,
+                  modifiedAt: Timestamp.now(),
+                  tutorialName: data.tutorialName ?? null,
+                });
+            // });
+    
+            // await timedOperation(metricKey, async () => {
+              firestore
+                .collection("daily-edits")
+                .doc(`${doc.id}-${new Date().toDateString()}`)
+                .set({
+                  type: "game",
+                  date: Timestamp.now(),
+                  id: doc.id,
+                });
+            // });
+            provider.awareness.setLocalStateField("saved", "saved");
+          }, 2000);
+        });
+      }
+    }
+  })
+})
+
+
 app.post("/listen", async (req, res) => {
   try {
     const body = req.body;
@@ -92,6 +160,7 @@ app.post("/listen", async (req, res) => {
     let code = ydoc.getText("codemirror").toString();
     let firstUpdated = true;
     ydoc.on("update", () => {
+      console.log("AKAFSk")
       if (!firstUpdated) {
         provider.awareness.setLocalState({ saved: "saving" });
         return;
@@ -115,6 +184,7 @@ app.post("/listen", async (req, res) => {
               tutorialName: tutorialName ?? null,
             });
         });
+        console.log('AKKAs')
 
         await timedOperation(metricKey, async () => {
           firestore
@@ -126,6 +196,8 @@ app.post("/listen", async (req, res) => {
               id: room,
             });
         });
+        console.log(code  )
+        console.log("FKKKFK")
         provider.awareness.setLocalStateField("saved", "saved");
       }, 2000);
     });
