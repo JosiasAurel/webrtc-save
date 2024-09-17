@@ -12,6 +12,7 @@ const app = express();
 app.use(express.json());
 
 let roomsListening = [];
+
 let firebaseApp = null;
 if (admin.apps.length === 0) {
   firebaseApp = admin.initializeApp({
@@ -40,10 +41,16 @@ if (graphite === null) throw new Error("Graphite host is not configured");
 const options = {
   host: graphite,
   port: 8125,
-  prefix: `${environment}.sprig.`,
+  prefix: `${environment}.sprig.collab-save-server.`,
 };
 
 const metrics = new StatsD(options);
+
+// send telemetry regarding current number of active rooms every 30 seconds
+setInterval(() => {
+  metrics.gauge("active_rooms", roomsListening.length);
+  metrics.increment("active_rooms", roomsListening.length);
+}, 30 * 1000);
 
 export default metrics;
 
@@ -82,7 +89,6 @@ firestore.collection("games").onSnapshot((snapshot) => {
         });
         let code = ydoc.getText("codemirror").toString();
         ydoc.on("update", () => {
-          console.log(provider.awareness.getStates())
           if (!firstUpdated) {
             provider.awareness.setLocalState({ saved: "saving" });
             return;
@@ -93,11 +99,10 @@ firestore.collection("games").onSnapshot((snapshot) => {
               provider.awareness.setLocalStateField("saved", "error");
               return;
             }
-            const metricKey = "database.update";
             code = ydoc.getText("codemirror").toString();
-    
-            // await timedOperation(metricKey, async () => {
-              firestore
+
+            await timedOperation('update_game', async () => {
+              await firestore
                 .collection("games")
                 .doc(doc.id)
                 .update({
@@ -105,10 +110,10 @@ firestore.collection("games").onSnapshot((snapshot) => {
                   modifiedAt: Timestamp.now(),
                   tutorialName: data.tutorialName ?? null,
                 });
-            // });
-    
-            // await timedOperation(metricKey, async () => {
-              firestore
+            });
+
+            await timedOperation('daily_edit', async () => {
+              await firestore
                 .collection("daily-edits")
                 .doc(`${doc.id}-${new Date().toDateString()}`)
                 .set({
@@ -116,7 +121,7 @@ firestore.collection("games").onSnapshot((snapshot) => {
                   date: Timestamp.now(),
                   id: doc.id,
                 });
-            // });
+            });
             provider.awareness.setLocalStateField("saved", "saved");
           }, 2000);
         });
