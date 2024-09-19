@@ -41,7 +41,7 @@ if (graphite === null) throw new Error("Graphite host is not configured");
 const options = {
   host: graphite,
   port: 8125,
-  prefix: `${environment}.sprig.collab-save-server.`,
+  prefix: `${environment}.sprig.collab-server.`,
 };
 
 const metrics = new StatsD(options);
