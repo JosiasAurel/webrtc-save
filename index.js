@@ -78,7 +78,6 @@ firestore.collection("games").onSnapshot((snapshot) => {
       if(roomsListening.find((r) => r.room === doc.id) === undefined){
         console.log("Started listening " + doc.id)
         let ydoc = new Y.Doc();
-        ydoc.getText("codemirror").insert(0, data.code);
         let provider = new WebrtcProvider(doc.id, ydoc, {
           signaling: ["wss://yjs-signaling-server-5fb6d64b3314.herokuapp.com"],
         });
