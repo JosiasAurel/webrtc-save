@@ -83,7 +83,6 @@ firestore.collection("games").onSnapshot((snapshot) => {
           ydoc: ydoc,
         });
         metrics.set("collab.Rooms_Active", roomsListening.length);
-        console.log(roomsListening);
         let code = ydoc.getText("codemirror").toString();
         ydoc.on("update", () => {
           if (!firstUpdated) {
