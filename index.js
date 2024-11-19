@@ -12,6 +12,9 @@ const app = express();
 app.use(express.json());
 
 let roomsListening = [];
+setInterval(() => {
+  metrics.set("collab.Rooms_Active", roomsListening.length);
+}, 10*1000) //update every 10 seconds
 
 let firebaseApp = null;
 if (admin.apps.length === 0) {
@@ -82,7 +85,6 @@ firestore.collection("games").onSnapshot((snapshot) => {
           provider: provider,
           ydoc: ydoc,
         });
-        metrics.set("collab.Rooms_Active", roomsListening.length);
         let code = ydoc.getText("codemirror").toString();
         ydoc.on("update", () => {
           if (!firstUpdated) {
