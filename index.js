@@ -14,7 +14,7 @@ app.use(express.json());
 let roomsListening = [];
 setInterval(() => {
   metrics.set("collab.Rooms_Active", roomsListening.length);
-}, 10*1000) //update every 10 seconds
+}, 10*60*1000) //update every 10 minutes
 
 let firebaseApp = null;
 if (admin.apps.length === 0) {
