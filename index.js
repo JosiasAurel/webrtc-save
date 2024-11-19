@@ -41,16 +41,12 @@ if (graphite === null) throw new Error("Graphite host is not configured");
 const options = {
   host: graphite,
   port: 8125,
-  prefix: `${environment}.sprig.collab-server.`,
+  prefix: `${environment}.sprig.`,
 };
 
-const metrics = new StatsD(options);
+console.log(options.prefix)
 
-// send telemetry regarding current number of active rooms every 30 seconds
-setInterval(() => {
-  metrics.gauge("active_rooms", roomsListening.length);
-  metrics.increment("active_rooms", roomsListening.length);
-}, 30 * 1000);
+const metrics = new StatsD(options);
 
 export default metrics;
 
@@ -79,13 +75,15 @@ firestore.collection("games").onSnapshot((snapshot) => {
         console.log("Started listening " + doc.id)
         let ydoc = new Y.Doc();
         let provider = new WebrtcProvider(doc.id, ydoc, {
-          signaling: ["wss://yjs-signaling-server-5fb6d64b3314.herokuapp.com"],
+          signaling: ["https://eu-yjs-signaling-d4f6d38b9dc8.herokuapp.com/"],
         });
         roomsListening.push({
           room: doc.id,
           provider: provider,
           ydoc: ydoc,
         });
+        metrics.set("collab.Rooms_Active", roomsListening.length);
+        console.log(roomsListening);
         let code = ydoc.getText("codemirror").toString();
         ydoc.on("update", () => {
           if (!firstUpdated) {
@@ -100,27 +98,39 @@ firestore.collection("games").onSnapshot((snapshot) => {
             }
             code = ydoc.getText("codemirror").toString();
 
-            await timedOperation('update_game', async () => {
-              await firestore
-                .collection("games")
-                .doc(doc.id)
-                .update({
-                  code,
-                  modifiedAt: Timestamp.now(),
-                  tutorialName: data.tutorialName ?? null,
-                });
-            });
+            try{
+              await timedOperation('database.update', async () => {
+                await firestore
+                  .collection("games")
+                  .doc(doc.id)
+                  .update({
+                    code,
+                    modifiedAt: Timestamp.now(),
+                    tutorialName: data.tutorialName ?? null,
+                  });
+              });
+              metrics.increment("database.update.success", 1)
+            } catch(e){
+              console.error(e);
+              metrics.increment("database.update.error", 1)
+            }
 
-            await timedOperation('daily_edit', async () => {
-              await firestore
-                .collection("daily-edits")
-                .doc(`${doc.id}-${new Date().toDateString()}`)
-                .set({
-                  type: "game",
-                  date: Timestamp.now(),
-                  id: doc.id,
-                });
-            });
+            try{
+              await timedOperation('database.update', async () => {
+                await firestore
+                  .collection("daily-edits")
+                  .doc(`${doc.id}-${new Date().toDateString()}`)
+                  .set({
+                    type: "game",
+                    date: Timestamp.now(),
+                    id: doc.id,
+                  });
+              });
+              metrics.increment("database.update.success", 1)
+            } catch(e){
+              console.error(e);
+              metrics.increment("database.update.error", 1)
+            }
             provider.awareness.setLocalStateField("saved", "saved");
           }, 2000);
         });
@@ -128,93 +138,6 @@ firestore.collection("games").onSnapshot((snapshot) => {
     }
   })
 })
-
-
-// app.post("/listen", async (req, res) => {
-//   try {
-//     const body = req.body;
-//     const apiKey = body.apiKey;
-//     if (apiKey !== process.env.API_KEY) {
-//       return res.status(401).send("Unauthorized");
-//     }
-//     const room = body.room;
-//     if (!room) {
-//       return res.status(400).send("Room is required");
-//     }
-//     if (!(await getGame(room)).exists) {
-//       return res.status(400).send("Game does not exist");
-//     }
-//     const tutorialName = body.tutorialName;
-//     const trackingId = body.trackingId;
-//     if (!trackingId) {
-//       return res.status(400).send("Tracking ID is required");
-//     }
-//     if (!room) {
-//       return res.status(400).send("Room is required");
-//     }
-//     const roomData = roomsListening.find((r) => r.room === room);
-//     if (roomData !== undefined) {
-//       return res.status(200).send("Already listening");
-//     }
-//     let ydoc = new Y.Doc();
-//     let provider = new WebrtcProvider(room, ydoc, {
-//       signaling: ["wss://yjs-signaling-server-5fb6d64b3314.herokuapp.com"],
-//     });
-
-//     let code = ydoc.getText("codemirror").toString();
-//     let firstUpdated = true;
-//     ydoc.on("update", () => {
-//       console.log("AKAFSk")
-//       if (!firstUpdated) {
-//         provider.awareness.setLocalState({ saved: "saving" });
-//         return;
-//       }
-//       firstUpdated = false;
-//       setInterval(async () => {
-//         if (provider.awareness.getStates().size <= 1) {
-//           provider.awareness.setLocalStateField("saved", "error");
-//           return;
-//         }
-//         const metricKey = "database.update";
-//         code = ydoc.getText("codemirror").toString();
-
-//         await timedOperation(metricKey, async () => {
-//           firestore
-//             .collection("games")
-//             .doc(room)
-//             .update({
-//               code,
-//               modifiedAt: Timestamp.now(),
-//               tutorialName: tutorialName ?? null,
-//             });
-//         });
-//         console.log('AKKAs')
-
-//         await timedOperation(metricKey, async () => {
-//           firestore
-//             .collection("daily-edits")
-//             .doc(`${room}-${new Date().toDateString()}`)
-//             .set({
-//               type: "game",
-//               date: Timestamp.now(),
-//               id: room,
-//             });
-//         });
-//         console.log(code  )
-//         console.log("FKKKFK")
-//         provider.awareness.setLocalStateField("saved", "saved");
-//       }, 2000);
-//     });
-//     roomsListening.push({
-//       room: room,
-//       provider: provider,
-//       ydoc: ydoc,
-//     });
-//     res.status(200).send("Listening to room " + room);
-//   } catch (e) {
-//     console.log(e);
-//   }
-// });
 
 app.post("/stop", (req, res) => {
   const body = req.body;
