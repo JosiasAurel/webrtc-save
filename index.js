@@ -78,7 +78,7 @@ firestore.collection("games").onSnapshot((snapshot) => {
         console.log("Started listening " + doc.id)
         let ydoc = new Y.Doc();
         let provider = new WebrtcProvider(doc.id, ydoc, {
-          signaling: ["https://eu-yjs-signaling-d4f6d38b9dc8.herokuapp.com/"],
+          signaling: ["wss://yjs-signaling-server-5fb6d64b3314.herokuapp.com"],
         });
         roomsListening.push({
           room: doc.id,
