@@ -6,6 +6,8 @@ import { Timestamp, getFirestore } from "firebase-admin/firestore";
 import { config } from "dotenv";
 import { StatsD } from "node-statsd";
 import { configDotenv } from "dotenv";
+import { writeFileSync } from "node:fs";
+import { stringify } from "csv";
 config();
 
 const app = express();
@@ -71,20 +73,73 @@ let records = {};
  * }
 */
 
+function buildAndWriteLatencyData() {
+  const processedLatencies = [];
+  Object.entries(records).map(([roomCount, children]) => {
+    Object.entries(children).map(([clientCount, latencies]) => {
+      const averageLatency = latencies.reduce((acc, curr) => acc + curr, 0) / latencies.length;
+
+      processedLatencies.push({
+        roomCount, clientCount,
+        latency: averageLatency
+      });
+    });
+  })
+
+  stringify(processedLatencies, {
+    header: true, 
+    columns: {
+      clientCount: 'clientCount',
+      latency: 'latency',
+      roomCount: 'roomCount'
+    }
+  }, (err, out) => {
+    if (err) { console.error("Failed to write latencies"); process.exit(1); } 
+    writeFileSync("processed.csv", out);
+  })
+}
+
+const failures = [];
+let startedWriting = false;
+const writeOperations = [];
+
 const timedOperation = async (metricKey, callback) => {
   const startTime = new Date().getTime();
-  const result = await callback();
-  const endTime = new Date().getTime() - startTime;
+  let result;
+  try {
+    writeOperations.push(1); // add this as a write operation
+    if (!startedWriting) startedWriting = true;
+    result = await callback();
+  } catch (error) {
+    failures.push(error.toString());
+    // write the errors to a file
+    writeFileSync("errors.json", JSON.stringify(failures));
+  } finally {
+    const endTime = new Date().getTime() - startTime;
+    metrics.timing(metricKey, endTime);
 
-  metrics.timing(metricKey, endTime);
+    writeOperations.pop();
+  }
   return result;
 };
+
 function getGame(id) {
   return firestore.collection("games").doc(id).get();
 }
 
+app.get("/done", (req, res) => {
+  if (startedWriting && writeOperations.length === 0) {
+    // exit if and only if we have finished writing everything to firestore
+    res.end();
+    process.exit(0);
+  }
+})
+
 app.get("/add-room/:roomId", (req, res) => {
+  res.send({ ok: true }); // tell the sender we're going to take care of this thing
+
   const roomId = req.params.roomId;
+  console.log("Creating new room");
 
   // start listening to updates from this room
   let ydoc = new Y.Doc();
@@ -99,20 +154,22 @@ app.get("/add-room/:roomId", (req, res) => {
     ydoc
   })
 
-  ydoc.on("update", (update, origin) => {
+  ydoc.on("update", async (update, origin) => {
     // receive update
     const startTime = new Date().getTime();
-    if (!firstUpdated) {
-      provider.awareness.setLocalState({ saved: "saving" });
-      return;
-    }
-    firstUpdated = false;
-    setInterval(async () => {
-      if (provider.awareness.getStates().size <= 1) {
-        provider.awareness.setLocalStateField("saved", "error");
-        return;
-      }
-      code = ydoc.getText("codemirror").toString();
+    // if (!firstUpdated) {
+      // provider.awareness.setLocalState({ saved: "saving" });
+      // return;
+    // }
+    // firstUpdated = false;
+    // setInterval(async () => {
+      // if (provider.awareness.getStates().size <= 1) {
+      //   provider.awareness.setLocalStateField("saved", "error");
+      //   return;
+      // }
+      // let code = ydoc.getText("codemirror").toString();
+      let ymap = ydoc.getMap("codemirror");
+      let code = ymap.get("code");
 
       const details = JSON.parse(code);
 
@@ -132,17 +189,22 @@ app.get("/add-room/:roomId", (req, res) => {
       }
 
       try {
+        // console.log("about to write an update to room", roomId);
         await timedOperation('database.update', async () => {
-          await firestore
+          return await firestore
             .collection("rooms")
-            .doc(doc.id)
+            .doc(roomId)
             .update({
-              content: code,
+              content: "hello world",
             });
         });
         // save update
         const timeElapsed = new Date().getTime() - startTime;
         records[details.roomCount][details.clientCount].push(timeElapsed);
+
+        // write the updated latency data to csv
+        buildAndWriteLatencyData();
+
         metrics.increment("database.update.success", 1)
       } catch (e) {
         console.error(e);
@@ -150,7 +212,7 @@ app.get("/add-room/:roomId", (req, res) => {
       }
 
       provider.awareness.setLocalStateField("saved", "saved");
-    }, 2000);
+    // }, 2000);
   });
 });
 
