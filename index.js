@@ -214,21 +214,22 @@ app.get("/add-room/:roomId", (req, res) => {
 
         try {
             // console.log("about to write an update to room", roomId);
-            await timedOperation("database.update", async () => {
+            timedOperation("database.update", async () => {
                 return await firestore.collection("rooms").doc(roomId).update({
                     content: "hello world",
                 });
+            }).then(() => {
+                // save update
+                const timeElapsed = new Date().getTime() - startTime;
+                records[details.roomCount][details.clientCount].push(timeElapsed);
+
+                ymap.set("response", "ack");
+
+                // write the updated latency data to csv
+                buildAndWriteLatencyData();
             });
-            // save update
-            const timeElapsed = new Date().getTime() - startTime;
-            records[details.roomCount][details.clientCount].push(timeElapsed);
 
-            ymap.set("response", "ack");
-
-            // write the updated latency data to csv
-            buildAndWriteLatencyData();
-
-            metrics.increment("database.update.success", 1);
+           metrics.increment("database.update.success", 1);
         } catch (e) {
             console.error(e);
             metrics.increment("database.update.error", 1);
