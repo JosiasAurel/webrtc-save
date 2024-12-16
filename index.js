@@ -214,7 +214,7 @@ app.get("/add-room/:roomId", (req, res) => {
 
         try {
             // console.log("about to write an update to room", roomId);
-            timedOperation("database.update", async () => {
+            await timedOperation("database.update", async () => {
                 return await firestore.collection("rooms").doc(roomId).update({
                     content: "hello world",
                 });
@@ -227,9 +227,9 @@ app.get("/add-room/:roomId", (req, res) => {
 
                 // write the updated latency data to csv
                 buildAndWriteLatencyData();
-            });
+            })
 
-           metrics.increment("database.update.success", 1);
+            metrics.increment("database.update.success", 1);
         } catch (e) {
             console.error(e);
             metrics.increment("database.update.error", 1);
